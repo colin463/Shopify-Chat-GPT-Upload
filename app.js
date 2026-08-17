@@ -20,7 +20,7 @@ const clientId = process.env.SHOPIFY_CLIENT_ID;
 const clientSecret = process.env.SHOPIFY_CLIENT_SECRET;
 
 const LOCATION_ID = "gid://shopify/Location/15027437646";
-const PORT = 3030;
+const PORT = process.env.PORT || 3030;
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
