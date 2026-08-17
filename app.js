@@ -15,18 +15,79 @@ const upload = multer({
   }
 });
 
+// ======================================================
+// SETTINGS
+// ======================================================
+
 const shop = process.env.SHOPIFY_SHOP;
 const clientId = process.env.SHOPIFY_CLIENT_ID;
 const clientSecret = process.env.SHOPIFY_CLIENT_SECRET;
+const uploadApiKey = process.env.UPLOAD_API_KEY;
 
+// Command Elite HQ
 const LOCATION_ID = "gid://shopify/Location/15027437646";
+
+// Works locally on 3030 and automatically uses Render's port online
 const PORT = process.env.PORT || 3030;
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // ======================================================
-// AUTHENTICATION
+// STARTUP CHECK
+// ======================================================
+
+function checkEnvironment() {
+  const missing = [];
+
+  if (!shop) missing.push("SHOPIFY_SHOP");
+  if (!clientId) missing.push("SHOPIFY_CLIENT_ID");
+  if (!clientSecret) missing.push("SHOPIFY_CLIENT_SECRET");
+  if (!uploadApiKey) missing.push("UPLOAD_API_KEY");
+
+  if (missing.length) {
+    console.error(
+      "Missing environment variables:",
+      missing.join(", ")
+    );
+  }
+}
+
+checkEnvironment();
+
+// ======================================================
+// PRIVATE API SECURITY
+// ======================================================
+
+function requireApiKey(req, res, next) {
+  const authHeader =
+    req.headers.authorization || "";
+
+  if (!authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized"
+    });
+  }
+
+  const suppliedKey =
+    authHeader.substring(7).trim();
+
+  if (
+    !uploadApiKey ||
+    suppliedKey !== uploadApiKey
+  ) {
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized"
+    });
+  }
+
+  next();
+}
+
+// ======================================================
+// SHOPIFY ACCESS TOKEN
 // ======================================================
 
 async function getToken() {
@@ -34,10 +95,13 @@ async function getToken() {
     `https://${shop}/admin/oauth/access_token`,
     {
       method: "POST",
+
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Type":
+          "application/x-www-form-urlencoded",
         Accept: "application/json"
       },
+
       body: new URLSearchParams({
         grant_type: "client_credentials",
         client_id: clientId,
@@ -50,7 +114,7 @@ async function getToken() {
 
   if (!response.ok) {
     throw new Error(
-      "Authentication failed:\n" +
+      "Shopify authentication failed:\n" +
       JSON.stringify(data, null, 2)
     );
   }
@@ -62,15 +126,21 @@ async function getToken() {
 // GRAPHQL HELPER
 // ======================================================
 
-async function graphql(token, query, variables = {}) {
+async function graphql(
+  token,
+  query,
+  variables = {}
+) {
   const response = await fetch(
     `https://${shop}/admin/api/2026-07/graphql.json`,
     {
       method: "POST",
+
       headers: {
         "Content-Type": "application/json",
         "X-Shopify-Access-Token": token
       },
+
       body: JSON.stringify({
         query,
         variables
@@ -82,7 +152,7 @@ async function graphql(token, query, variables = {}) {
 
   if (result.errors) {
     throw new Error(
-      "GraphQL error:\n" +
+      "Shopify GraphQL error:\n" +
       JSON.stringify(result.errors, null, 2)
     );
   }
@@ -91,7 +161,7 @@ async function graphql(token, query, variables = {}) {
 }
 
 // ======================================================
-// SAFE SHOPIFY SEARCH VALUE
+// SHOPIFY SEARCH ESCAPING
 // ======================================================
 
 function escapeSearchValue(value) {
@@ -104,14 +174,17 @@ function escapeSearchValue(value) {
 // DUPLICATE CHECK
 // ======================================================
 
-async function checkForDuplicates(token, product) {
-  const duplicateResults = [];
+async function checkForDuplicates(
+  token,
+  product
+) {
+  const duplicates = [];
 
-  // ------------------------------------------------------
-  // SKU CHECK
-  // ------------------------------------------------------
-
-  if (product.sku && product.sku.trim()) {
+  // SKU
+  if (
+    product.sku &&
+    String(product.sku).trim()
+  ) {
     const query = `
       query FindSku($query: String!) {
         productVariants(
@@ -133,41 +206,43 @@ async function checkForDuplicates(token, product) {
       }
     `;
 
+    const sku =
+      String(product.sku).trim();
+
     const data = await graphql(
       token,
       query,
       {
         query:
-          `sku:"${escapeSearchValue(product.sku.trim())}"`
+          `sku:"${escapeSearchValue(sku)}"`
       }
     );
 
-    const exactSkuMatches =
+    const matches =
       data.productVariants.nodes.filter(
         variant =>
           String(variant.sku || "")
             .trim()
             .toLowerCase() ===
-          product.sku.trim().toLowerCase()
+          sku.toLowerCase()
       );
 
-    for (const match of exactSkuMatches) {
-      duplicateResults.push({
+    for (const match of matches) {
+      duplicates.push({
         type: "SKU",
-        value: product.sku.trim(),
-        productTitle: match.product.title,
-        productStatus: match.product.status
+        value: sku,
+        productTitle:
+          match.product.title,
+        productStatus:
+          match.product.status
       });
     }
   }
 
-  // ------------------------------------------------------
-  // BARCODE CHECK
-  // ------------------------------------------------------
-
+  // BARCODE
   if (
     product.barcode &&
-    product.barcode.trim()
+    String(product.barcode).trim()
   ) {
     const query = `
       query FindBarcode($query: String!) {
@@ -190,44 +265,44 @@ async function checkForDuplicates(token, product) {
       }
     `;
 
+    const barcode =
+      String(product.barcode).trim();
+
     const data = await graphql(
       token,
       query,
       {
         query:
           `barcode:"${escapeSearchValue(
-            product.barcode.trim()
+            barcode
           )}"`
       }
     );
 
-    const exactBarcodeMatches =
+    const matches =
       data.productVariants.nodes.filter(
         variant =>
           String(variant.barcode || "")
             .trim() ===
-          product.barcode.trim()
+          barcode
       );
 
-    for (
-      const match of exactBarcodeMatches
-    ) {
-      duplicateResults.push({
+    for (const match of matches) {
+      duplicates.push({
         type: "BARCODE",
-        value: product.barcode.trim(),
-        productTitle: match.product.title,
-        productStatus: match.product.status
+        value: barcode,
+        productTitle:
+          match.product.title,
+        productStatus:
+          match.product.status
       });
     }
   }
 
-  // ------------------------------------------------------
-  // TITLE CHECK
-  // ------------------------------------------------------
-
+  // EXACT TITLE
   if (
     product.title &&
-    product.title.trim()
+    String(product.title).trim()
   ) {
     const query = `
       query FindTitle($query: String!) {
@@ -244,53 +319,59 @@ async function checkForDuplicates(token, product) {
       }
     `;
 
+    const title =
+      String(product.title).trim();
+
     const data = await graphql(
       token,
       query,
       {
         query:
           `title:"${escapeSearchValue(
-            product.title.trim()
+            title
           )}"`
       }
     );
 
-    const exactTitleMatches =
+    const matches =
       data.products.nodes.filter(
         existing =>
           existing.title
             .trim()
             .toLowerCase() ===
-          product.title
-            .trim()
-            .toLowerCase()
+          title.toLowerCase()
       );
 
-    for (
-      const match of exactTitleMatches
-    ) {
-      duplicateResults.push({
+    for (const match of matches) {
+      duplicates.push({
         type: "TITLE",
-        value: product.title.trim(),
-        productTitle: match.title,
-        productStatus: match.status
+        value: title,
+        productTitle:
+          match.title,
+        productStatus:
+          match.status
       });
     }
   }
 
-  return duplicateResults;
+  return duplicates;
 }
 
 // ======================================================
-// STAGE LOCAL IMAGE
+// STAGE LOCAL IMAGE TO SHOPIFY
 // ======================================================
 
-async function stageImage(token, file) {
+async function stageImage(
+  token,
+  file
+) {
   const mutation = `
     mutation StagedUploadsCreate(
       $input: [StagedUploadInput!]!
     ) {
-      stagedUploadsCreate(input: $input) {
+      stagedUploadsCreate(
+        input: $input
+      ) {
         stagedTargets {
           url
           resourceUrl
@@ -315,10 +396,17 @@ async function stageImage(token, file) {
     {
       input: [
         {
-          filename: file.originalname,
-          mimeType: file.mimetype,
-          httpMethod: "POST",
-          resource: "PRODUCT_IMAGE"
+          filename:
+            file.originalname,
+
+          mimeType:
+            file.mimetype,
+
+          httpMethod:
+            "POST",
+
+          resource:
+            "PRODUCT_IMAGE"
         }
       ]
     }
@@ -329,7 +417,7 @@ async function stageImage(token, file) {
 
   if (output.userErrors.length) {
     throw new Error(
-      "Staged upload failed:\n" +
+      "Staged image upload failed:\n" +
       JSON.stringify(
         output.userErrors,
         null,
@@ -365,20 +453,21 @@ async function stageImage(token, file) {
     file.originalname
   );
 
-  const response = await fetch(
-    target.url,
-    {
-      method: "POST",
-      body: form
-    }
-  );
+  const uploadResponse =
+    await fetch(
+      target.url,
+      {
+        method: "POST",
+        body: form
+      }
+    );
 
-  if (!response.ok) {
+  if (!uploadResponse.ok) {
     const text =
-      await response.text();
+      await uploadResponse.text();
 
     throw new Error(
-      `Image upload failed (${response.status}):\n${text}`
+      `Image transfer failed (${uploadResponse.status}):\n${text}`
     );
   }
 
@@ -407,6 +496,7 @@ async function createProduct(
           id
           title
           status
+          handle
 
           variants(first: 1) {
             nodes {
@@ -414,6 +504,17 @@ async function createProduct(
 
               inventoryItem {
                 id
+              }
+            }
+          }
+
+          media(first: 20) {
+            nodes {
+              id
+              mediaContentType
+
+              preview {
+                status
               }
             }
           }
@@ -428,20 +529,21 @@ async function createProduct(
   `;
 
   const media =
-    imageSources.map(
-      source => ({
+    (imageSources || [])
+      .filter(Boolean)
+      .map(source => ({
         originalSource: source,
         mediaContentType: "IMAGE",
         alt: product.title
-      })
-    );
+      }));
 
   const data = await graphql(
     token,
     mutation,
     {
       product: {
-        title: product.title,
+        title:
+          product.title,
 
         descriptionHtml:
           product.descriptionHtml || "",
@@ -481,7 +583,7 @@ async function createProduct(
 }
 
 // ======================================================
-// UPDATE VARIANT
+// UPDATE DEFAULT VARIANT
 // ======================================================
 
 async function updateVariant(
@@ -501,9 +603,17 @@ async function updateVariant(
       ) {
         productVariants {
           id
+          price
+          barcode
 
           inventoryItem {
             id
+            sku
+            tracked
+
+            unitCost {
+              amount
+            }
           }
         }
 
@@ -523,7 +633,8 @@ async function updateVariant(
 
       variants: [
         {
-          id: variantId,
+          id:
+            variantId,
 
           price:
             String(
@@ -531,9 +642,12 @@ async function updateVariant(
             ),
 
           barcode:
-            product.barcode || null,
+            product.barcode
+              ? String(product.barcode)
+              : null,
 
-          taxable: true,
+          taxable:
+            true,
 
           inventoryItem: {
             sku:
@@ -544,9 +658,11 @@ async function updateVariant(
                 product.cost || "0.00"
               ),
 
-            tracked: true,
+            tracked:
+              true,
 
-            requiresShipping: true
+            requiresShipping:
+              true
           }
         }
       ]
@@ -571,7 +687,7 @@ async function updateVariant(
 }
 
 // ======================================================
-// ACTIVATE INVENTORY
+// ACTIVATE INVENTORY AT COMMAND ELITE HQ
 // ======================================================
 
 async function activateInventory(
@@ -585,8 +701,11 @@ async function activateInventory(
       $idempotencyKey: String!
     ) {
       inventoryActivate(
-        inventoryItemId: $inventoryItemId,
-        locationId: $locationId
+        inventoryItemId:
+          $inventoryItemId,
+
+        locationId:
+          $locationId
       )
       @idempotent(
         key: $idempotencyKey
@@ -608,7 +727,9 @@ async function activateInventory(
     mutation,
     {
       inventoryItemId,
-      locationId: LOCATION_ID,
+      locationId:
+        LOCATION_ID,
+
       idempotencyKey:
         crypto.randomUUID()
     }
@@ -641,7 +762,7 @@ async function activateInventory(
 }
 
 // ======================================================
-// SET INVENTORY
+// SET HQ INVENTORY
 // ======================================================
 
 async function setInventory(
@@ -651,8 +772,11 @@ async function setInventory(
 ) {
   const mutation = `
     mutation SetInventory(
-      $input: InventorySetQuantitiesInput!,
-      $idempotencyKey: String!
+      $input:
+        InventorySetQuantitiesInput!,
+
+      $idempotencyKey:
+        String!
     ) {
       inventorySetQuantities(
         input: $input
@@ -660,6 +784,16 @@ async function setInventory(
       @idempotent(
         key: $idempotencyKey
       ) {
+        inventoryAdjustmentGroup {
+          reason
+
+          changes {
+            name
+            delta
+            quantityAfterChange
+          }
+        }
+
         userErrors {
           code
           field
@@ -677,8 +811,11 @@ async function setInventory(
         crypto.randomUUID(),
 
       input: {
-        name: "available",
-        reason: "correction",
+        name:
+          "available",
+
+        reason:
+          "correction",
 
         quantities: [
           {
@@ -717,24 +854,251 @@ async function setInventory(
 }
 
 // ======================================================
-// SERVE FORM
+// NORMALISE PRODUCT INPUT
 // ======================================================
 
-app.get("/", (req, res) => {
-  res.sendFile(
-    path.join(
-      __dirname,
-      "index.html"
+function normaliseProduct(product) {
+  const cleaned = {
+    ...product
+  };
+
+  if (
+    Array.isArray(cleaned.tags)
+  ) {
+    cleaned.tags =
+      cleaned.tags
+        .map(tag =>
+          String(tag).trim()
+        )
+        .filter(Boolean);
+  } else {
+    cleaned.tags =
+      String(
+        cleaned.tags || ""
+      )
+        .split(",")
+        .map(tag =>
+          tag.trim()
+        )
+        .filter(Boolean);
+  }
+
+  return cleaned;
+}
+
+function normaliseImageUrls(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map(url =>
+        String(url).trim()
+      )
+      .filter(Boolean);
+  }
+
+  return String(value || "")
+    .split(/\r?\n/)
+    .map(url =>
+      url.trim()
     )
-  );
-});
+    .filter(Boolean);
+}
 
 // ======================================================
-// UPLOAD PRODUCT
+// BASIC VALIDATION
 // ======================================================
+
+function validateProduct(product) {
+  if (
+    !product.title ||
+    !String(product.title).trim()
+  ) {
+    throw new Error(
+      "Product title is required."
+    );
+  }
+
+  if (
+    !["DRAFT", "ACTIVE"].includes(
+      product.status || "DRAFT"
+    )
+  ) {
+    throw new Error(
+      'Status must be "DRAFT" or "ACTIVE".'
+    );
+  }
+
+  if (
+    product.quantity !== undefined &&
+    Number.isNaN(
+      Number(product.quantity)
+    )
+  ) {
+    throw new Error(
+      "Quantity must be a number."
+    );
+  }
+}
+
+// ======================================================
+// CREATE COMPLETE SHOPIFY PRODUCT
+// ======================================================
+
+async function processProduct({
+  product,
+  imageSources = []
+}) {
+  product =
+    normaliseProduct(product);
+
+  product.status =
+    product.status || "DRAFT";
+
+  validateProduct(product);
+
+  const token =
+    await getToken();
+
+  // DUPLICATES FIRST
+  const duplicates =
+    await checkForDuplicates(
+      token,
+      product
+    );
+
+  if (duplicates.length) {
+    return {
+      success: false,
+      duplicate: true,
+      error:
+        "POSSIBLE DUPLICATE PRODUCT FOUND",
+      duplicates
+    };
+  }
+
+  // CREATE PRODUCT
+  const createdProduct =
+    await createProduct(
+      token,
+      product,
+      imageSources
+    );
+
+  const variant =
+    createdProduct
+      .variants
+      .nodes[0];
+
+  if (!variant) {
+    throw new Error(
+      "Shopify did not create a default variant."
+    );
+  }
+
+  // UPDATE VARIANT
+  const updatedVariant =
+    await updateVariant(
+      token,
+      createdProduct.id,
+      variant.id,
+      product
+    );
+
+  const inventoryItemId =
+    updatedVariant
+      .inventoryItem.id;
+
+  // INVENTORY
+  await activateInventory(
+    token,
+    inventoryItemId
+  );
+
+  await setInventory(
+    token,
+    inventoryItemId,
+    product.quantity
+  );
+
+  return {
+    success: true,
+
+    title:
+      createdProduct.title,
+
+    status:
+      createdProduct.status,
+
+    productId:
+      createdProduct.id,
+
+    handle:
+      createdProduct.handle,
+
+    sku:
+      updatedVariant
+        .inventoryItem
+        .sku,
+
+    price:
+      updatedVariant.price,
+
+    barcode:
+      updatedVariant.barcode,
+
+    quantity:
+      Number(
+        product.quantity || 0
+      ),
+
+    location:
+      "Command Elite HQ",
+
+    images:
+      imageSources.length
+  };
+}
+
+// ======================================================
+// HEALTH CHECK
+// ======================================================
+
+app.get(
+  "/healthz",
+  (req, res) => {
+    res.status(200).json({
+      ok: true,
+      service:
+        "Command Elite Shopify Uploader"
+    });
+  }
+);
+
+// ======================================================
+// PUBLIC HOME PAGE
+// ======================================================
+
+app.get(
+  "/",
+  (req, res) => {
+    res.sendFile(
+      path.join(
+        __dirname,
+        "index.html"
+      )
+    );
+  }
+);
+
+// ======================================================
+// SECURE BROWSER UPLOAD ROUTE
+// ======================================================
+// This route accepts multipart/form-data and local files.
+// It now requires the Bearer API key.
 
 app.post(
   "/upload",
+
+  requireApiKey,
 
   upload.array(
     "photos",
@@ -744,43 +1108,19 @@ app.post(
   async (req, res) => {
     try {
       const product =
-        req.body;
-
-      // TAGS
-
-      product.tags =
-        String(
-          product.tags || ""
-        )
-          .split(",")
-          .map(
-            tag =>
-              tag.trim()
-          )
-          .filter(Boolean);
-
-      // IMAGE URLS
+        normaliseProduct(
+          req.body
+        );
 
       const imageUrls =
-        String(
-          product.imageUrls || ""
-        )
-          .split(/\r?\n/)
-          .map(
-            url =>
-              url.trim()
-          )
-          .filter(Boolean);
-
-      // AUTHENTICATE FIRST
+        normaliseImageUrls(
+          product.imageUrls
+        );
 
       const token =
         await getToken();
 
-      // ==================================================
-      // DUPLICATE CHECK BEFORE UPLOAD
-      // ==================================================
-
+      // Check duplicates before uploading local files
       const duplicates =
         await checkForDuplicates(
           token,
@@ -788,22 +1128,18 @@ app.post(
         );
 
       if (duplicates.length) {
-        return res.status(409).json({
-          success: false,
-          duplicate: true,
-
-          error:
-            "POSSIBLE DUPLICATE PRODUCT FOUND",
-
-          duplicates
-        });
+        return res
+          .status(409)
+          .json({
+            success: false,
+            duplicate: true,
+            error:
+              "POSSIBLE DUPLICATE PRODUCT FOUND",
+            duplicates
+          });
       }
 
-      // ==================================================
-      // LOCAL IMAGES
-      // ==================================================
-
-      const localImageSources = [];
+      const localImages = [];
 
       for (
         const file of req.files || []
@@ -814,19 +1150,15 @@ app.post(
             file
           );
 
-        localImageSources.push(
+        localImages.push(
           source
         );
       }
 
       const allImageSources = [
-        ...localImageSources,
+        ...localImages,
         ...imageUrls
       ];
-
-      // ==================================================
-      // CREATE PRODUCT
-      // ==================================================
 
       const createdProduct =
         await createProduct(
@@ -846,10 +1178,6 @@ app.post(
         );
       }
 
-      // ==================================================
-      // PRICE / SKU / BARCODE / COST
-      // ==================================================
-
       const updatedVariant =
         await updateVariant(
           token,
@@ -862,10 +1190,6 @@ app.post(
         updatedVariant
           .inventoryItem.id;
 
-      // ==================================================
-      // INVENTORY
-      // ==================================================
-
       await activateInventory(
         token,
         inventoryItemId
@@ -877,29 +1201,105 @@ app.post(
         product.quantity
       );
 
-      // ==================================================
-      // SUCCESS
-      // ==================================================
-
       res.json({
         success: true,
-
         title:
           createdProduct.title,
-
         status:
           createdProduct.status,
-
+        productId:
+          createdProduct.id,
+        sku:
+          updatedVariant
+            .inventoryItem
+            .sku,
+        quantity:
+          Number(
+            product.quantity || 0
+          ),
+        location:
+          "Command Elite HQ",
         images:
           allImageSources.length
       });
 
     } catch (error) {
+      console.error(error);
+
       res.status(500).json({
         success: false,
-        error: error.message
+        error:
+          error.message
       });
     }
+  }
+);
+
+// ======================================================
+// SECURE JSON API FOR CHATGPT
+// ======================================================
+// This is the endpoint we'll connect to ChatGPT.
+// It accepts product data + public/staged image URLs.
+// No local browser uploader is required.
+
+app.post(
+  "/api/upload-product",
+
+  requireApiKey,
+
+  async (req, res) => {
+    try {
+      const product =
+        normaliseProduct(
+          req.body || {}
+        );
+
+      const imageSources =
+        normaliseImageUrls(
+          product.imageUrls ||
+          product.images
+        );
+
+      const result =
+        await processProduct({
+          product,
+          imageSources
+        });
+
+      if (
+        result.duplicate
+      ) {
+        return res
+          .status(409)
+          .json(result);
+      }
+
+      res.status(200).json(
+        result
+      );
+
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        success: false,
+        error:
+          error.message
+      });
+    }
+  }
+);
+
+// ======================================================
+// 404
+// ======================================================
+
+app.use(
+  (req, res) => {
+    res.status(404).json({
+      success: false,
+      error: "Not found"
+    });
   }
 );
 
@@ -907,19 +1307,32 @@ app.post(
 // START SERVER
 // ======================================================
 
-app.listen(PORT, () => {
-  console.log("");
-  console.log(
-    "COMMAND ELITE SHOPIFY UPLOADER"
-  );
-
-  console.log(
-    `Running at http://localhost:${PORT}`
-  );
-
-  console.log("");
-  console.log(
-    "Duplicate protection: ON"
-  );
-  console.log("");
-});
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log("");
+    console.log(
+      "===================================="
+    );
+    console.log(
+      "COMMAND ELITE SHOPIFY UPLOADER"
+    );
+    console.log(
+      "===================================="
+    );
+    console.log(
+      `Running on port ${PORT}`
+    );
+    console.log(
+      "API security: ON"
+    );
+    console.log(
+      "Duplicate protection: ON"
+    );
+    console.log(
+      "ChatGPT endpoint: /api/upload-product"
+    );
+    console.log("");
+  }
+);
