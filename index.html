@@ -1,0 +1,618 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Command Elite Shopify Uploader</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f5f7;
+      margin: 0;
+      padding: 30px;
+      color: #222;
+    }
+
+    .container {
+      max-width: 950px;
+      margin: auto;
+      background: white;
+      padding: 30px;
+      border-radius: 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.08);
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    .autofill-box {
+      background: #f8f9fb;
+      border: 1px solid #d7dbe2;
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 25px;
+    }
+
+    .autofill-box textarea {
+      min-height: 220px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 11px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 15px;
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .photo-box {
+      padding: 18px;
+      border: 2px dashed #bbb;
+      border-radius: 10px;
+      background: #fafafa;
+    }
+
+    button {
+      margin-top: 15px;
+      padding: 13px 22px;
+      font-size: 16px;
+      font-weight: bold;
+      border: 0;
+      border-radius: 9px;
+      cursor: pointer;
+    }
+
+    .fill-button {
+      background: #222;
+      color: white;
+    }
+
+    .upload-button {
+      margin-top: 22px;
+      font-size: 17px;
+    }
+
+    #autofillMessage,
+    #message {
+      margin-top: 15px;
+      padding: 15px;
+      border-radius: 8px;
+      display: none;
+      white-space: pre-wrap;
+    }
+
+    .success {
+      background: #e6f6ea;
+      border: 1px solid #70bd7c;
+    }
+
+    .error {
+      background: #fdecec;
+      border: 1px solid #d96d6d;
+    }
+
+    .warning {
+      background: #fff4d6;
+      border: 1px solid #d8a72b;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <h1>Command Elite Shopify Product Uploader</h1>
+
+  <p>
+    Products default to Draft and inventory is added to Command Elite HQ.
+  </p>
+
+  <div class="autofill-box">
+
+    <h2>Paste ChatGPT Product Data</h2>
+
+    <p>
+      Paste the JSON product data provided by ChatGPT below,
+      then click Fill Product Form.
+    </p>
+
+    <textarea
+      id="chatgptData"
+      placeholder='{
+  "title": "Pokemon Example Product",
+  "vendor": "Pokemon",
+  "productType": "Trading Cards",
+  "sku": "PKM-001",
+  "barcode": "1234567890123",
+  "price": "59.95",
+  "cost": "32.00",
+  "quantity": 4,
+  "status": "DRAFT",
+  "tags": ["Pokemon", "Trading Cards"],
+  "description": "Product description here.",
+  "imageUrls": ["https://supplier.com/image.jpg"]
+}'
+    ></textarea>
+
+    <button
+      type="button"
+      class="fill-button"
+      id="fillProduct"
+    >
+      Fill Product Form
+    </button>
+
+    <div id="autofillMessage"></div>
+
+  </div>
+
+  <form id="productForm">
+
+    <div class="grid">
+
+      <div class="full">
+        <label>Product Title</label>
+        <input
+          name="title"
+          id="title"
+          required
+        >
+      </div>
+
+      <div>
+        <label>Vendor</label>
+        <input
+          name="vendor"
+          id="vendor"
+        >
+      </div>
+
+      <div>
+        <label>Product Type</label>
+        <input
+          name="productType"
+          id="productType"
+        >
+      </div>
+
+      <div>
+        <label>SKU</label>
+        <input
+          name="sku"
+          id="sku"
+        >
+      </div>
+
+      <div>
+        <label>Barcode</label>
+        <input
+          name="barcode"
+          id="barcode"
+        >
+      </div>
+
+      <div>
+        <label>Selling Price</label>
+        <input
+          name="price"
+          id="price"
+          type="number"
+          step="0.01"
+        >
+      </div>
+
+      <div>
+        <label>Cost</label>
+        <input
+          name="cost"
+          id="cost"
+          type="number"
+          step="0.01"
+        >
+      </div>
+
+      <div>
+        <label>Quantity</label>
+        <input
+          name="quantity"
+          id="quantity"
+          type="number"
+          value="1"
+        >
+      </div>
+
+      <div>
+        <label>Status</label>
+
+        <select
+          name="status"
+          id="status"
+        >
+          <option value="DRAFT">
+            Draft
+          </option>
+
+          <option value="ACTIVE">
+            Active
+          </option>
+        </select>
+      </div>
+
+      <div class="full">
+        <label>Tags</label>
+
+        <input
+          name="tags"
+          id="tags"
+          placeholder="Pokemon, Graded Cards, PSA"
+        >
+      </div>
+
+      <div class="full">
+        <label>Description</label>
+
+        <textarea
+          name="description"
+          id="description"
+        ></textarea>
+      </div>
+
+      <div class="full">
+
+        <label>
+          Choose Product Photos
+        </label>
+
+        <div class="photo-box">
+
+          <input
+            type="file"
+            id="photos"
+            name="photos"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+          >
+
+          <p>
+            Select up to 10 JPG, PNG or WEBP images.
+          </p>
+
+        </div>
+
+      </div>
+
+      <div class="full">
+
+        <label>
+          Image URLs
+        </label>
+
+        <textarea
+          id="imageUrls"
+          name="imageUrls"
+          placeholder="One supplier image URL per line"
+        ></textarea>
+
+      </div>
+
+    </div>
+
+    <button
+      type="submit"
+      class="upload-button"
+    >
+      Upload to Shopify
+    </button>
+
+  </form>
+
+  <div id="message"></div>
+
+</div>
+
+<script>
+
+const form =
+  document.getElementById("productForm");
+
+const message =
+  document.getElementById("message");
+
+const autofillMessage =
+  document.getElementById("autofillMessage");
+
+const fillButton =
+  document.getElementById("fillProduct");
+
+// ======================================================
+// CHATGPT AUTO-FILL
+// ======================================================
+
+fillButton.addEventListener(
+  "click",
+  () => {
+
+    autofillMessage.style.display = "none";
+
+    try {
+
+      const raw =
+        document
+          .getElementById("chatgptData")
+          .value
+          .trim();
+
+      if (!raw) {
+        throw new Error(
+          "Paste ChatGPT product data first."
+        );
+      }
+
+      const product =
+        JSON.parse(raw);
+
+      document.getElementById("title").value =
+        product.title || "";
+
+      document.getElementById("vendor").value =
+        product.vendor || "";
+
+      document.getElementById("productType").value =
+        product.productType || "";
+
+      document.getElementById("sku").value =
+        product.sku || "";
+
+      document.getElementById("barcode").value =
+        product.barcode || "";
+
+      document.getElementById("price").value =
+        product.price || "";
+
+      document.getElementById("cost").value =
+        product.cost || "";
+
+      document.getElementById("quantity").value =
+        product.quantity ?? 1;
+
+      document.getElementById("status").value =
+        product.status || "DRAFT";
+
+      if (Array.isArray(product.tags)) {
+        document.getElementById("tags").value =
+          product.tags.join(", ");
+      } else {
+        document.getElementById("tags").value =
+          product.tags || "";
+      }
+
+      document.getElementById("description").value =
+        product.description ||
+        product.descriptionText ||
+        "";
+
+      if (Array.isArray(product.imageUrls)) {
+        document.getElementById("imageUrls").value =
+          product.imageUrls.join("\n");
+      } else {
+        document.getElementById("imageUrls").value =
+          product.imageUrls || "";
+      }
+
+      autofillMessage.style.display = "block";
+      autofillMessage.className = "success";
+
+      autofillMessage.textContent =
+        "Product data loaded successfully.\n\n" +
+        "Review the fields below before uploading.";
+
+    } catch (error) {
+
+      autofillMessage.style.display = "block";
+      autofillMessage.className = "error";
+
+      autofillMessage.textContent =
+        "COULD NOT LOAD PRODUCT DATA\n\n" +
+        error.message +
+        "\n\nMake sure you pasted valid JSON.";
+
+    }
+  }
+);
+
+// ======================================================
+// SHOPIFY UPLOAD
+// ======================================================
+
+form.addEventListener(
+  "submit",
+  async (event) => {
+
+    event.preventDefault();
+
+    message.style.display = "block";
+    message.className = "";
+    message.textContent =
+      "Checking Shopify and uploading product...";
+
+    const data = new FormData();
+
+    data.append(
+      "title",
+      document.getElementById("title").value
+    );
+
+    data.append(
+      "vendor",
+      document.getElementById("vendor").value
+    );
+
+    data.append(
+      "productType",
+      document.getElementById("productType").value
+    );
+
+    data.append(
+      "sku",
+      document.getElementById("sku").value
+    );
+
+    data.append(
+      "barcode",
+      document.getElementById("barcode").value
+    );
+
+    data.append(
+      "price",
+      document.getElementById("price").value
+    );
+
+    data.append(
+      "cost",
+      document.getElementById("cost").value
+    );
+
+    data.append(
+      "quantity",
+      document.getElementById("quantity").value
+    );
+
+    data.append(
+      "status",
+      document.getElementById("status").value
+    );
+
+    data.append(
+      "tags",
+      document.getElementById("tags").value
+    );
+
+    const description =
+      document.getElementById("description").value;
+
+    data.append(
+      "descriptionHtml",
+      "<p>" +
+      description
+        .replace(/\n\s*\n/g, "</p><p>")
+        .replace(/\n/g, "<br>") +
+      "</p>"
+    );
+
+    data.append(
+      "imageUrls",
+      document.getElementById("imageUrls").value
+    );
+
+    const photos =
+      document.getElementById("photos").files;
+
+    for (const photo of photos) {
+      data.append(
+        "photos",
+        photo
+      );
+    }
+
+    try {
+
+      const response =
+        await fetch(
+          "/upload",
+          {
+            method: "POST",
+            body: data
+          }
+        );
+
+      const result =
+        await response.json();
+
+      if (!result.success) {
+
+        if (
+          result.duplicate &&
+          Array.isArray(result.duplicates)
+        ) {
+
+          const lines =
+            result.duplicates.map(
+              duplicate =>
+                duplicate.type +
+                ": " +
+                duplicate.value +
+                "\nExisting product: " +
+                duplicate.productTitle +
+                "\nStatus: " +
+                duplicate.productStatus
+            );
+
+          message.className = "warning";
+
+          message.textContent =
+            "DUPLICATE FOUND - UPLOAD CANCELLED\n\n" +
+            lines.join("\n\n");
+
+          return;
+        }
+
+        throw new Error(
+          result.error
+        );
+      }
+
+      message.className =
+        "success";
+
+      message.textContent =
+        "SUCCESS - PRODUCT UPLOADED\n\n" +
+        "Product: " +
+        result.title +
+        "\nStatus: " +
+        result.status +
+        "\nImages: " +
+        result.images +
+        "\n\nCheck Shopify Admin > Products.";
+
+    } catch (error) {
+
+      message.className =
+        "error";
+
+      message.textContent =
+        "UPLOAD FAILED\n\n" +
+        error.message;
+    }
+  }
+);
+
+</script>
+
+</body>
+</html>
